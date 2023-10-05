@@ -165,7 +165,7 @@ namespace glTFRuntimeOBJ
 				}
 				else
 				{
-					Primitive.UVs[0].Add(FVector2D::Zero());
+					Primitive.UVs[0].Add(FVector2D::ZeroVector);
 				}
 			}
 
