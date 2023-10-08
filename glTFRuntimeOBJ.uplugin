@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "1.0",
+	"VersionName": "20231008",
 	"FriendlyName": "glTFRuntimeOBJ",
 	"Description": "glTFRuntime support for OBJ files",
 	"Category": "Other",
@@ -19,6 +19,12 @@
 			"Name": "glTFRuntimeOBJ",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "glTFRuntime",
+			"Enabled": true
 		}
 	]
 }
