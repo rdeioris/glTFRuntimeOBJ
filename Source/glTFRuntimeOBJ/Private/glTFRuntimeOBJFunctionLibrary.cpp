@@ -8,6 +8,8 @@ struct FglTFRuntimeOBJCacheData : FglTFRuntimePluginCacheData
 {
 	TArray<TArray<FString>> GeometryLines;
 	TArray<TArray<FString>> MaterialLines;
+	TArray<FString> ObjectNames;
+	TMap<FString, FglTFRuntimeMeshLOD> Objects;
 };
 
 namespace glTFRuntimeOBJ
@@ -312,6 +314,11 @@ TArray<FString> UglTFRuntimeOBJFunctionLibrary::GetOBJObjectNames(UglTFRuntimeAs
 		return Names;
 	}
 
+	if (RuntimeOBJCacheData->ObjectNames.Num() > 0)
+	{
+		return RuntimeOBJCacheData->ObjectNames;
+	}
+
 	for (const TArray<FString>& Line : RuntimeOBJCacheData->GeometryLines)
 	{
 		if (Line[0] == "o")
@@ -320,7 +327,17 @@ TArray<FString> UglTFRuntimeOBJFunctionLibrary::GetOBJObjectNames(UglTFRuntimeAs
 		}
 	}
 
-	return Names;
+	if (Names.Num() > 0)
+	{
+		RuntimeOBJCacheData->ObjectNames = Names;
+	}
+	else
+	{
+		// add an empty entry for assets without objects
+		RuntimeOBJCacheData->ObjectNames.Add("");
+	}
+
+	return RuntimeOBJCacheData->ObjectNames;
 }
 
 bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asset, const FString& ObjectName, FglTFRuntimeMeshLOD& RuntimeLOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig)
@@ -334,6 +351,12 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 	if (!RuntimeOBJCacheData)
 	{
 		return false;
+	}
+
+	if (RuntimeOBJCacheData->Objects.Contains(ObjectName))
+	{
+		RuntimeLOD = RuntimeOBJCacheData->Objects[ObjectName];
+		return true;
 	}
 
 	int32 StartingLine = -1;
@@ -353,6 +376,11 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 				}
 			}
 		}
+	}
+	else
+	{
+		// empty name, get the first unammed object
+		StartingLine = 0;
 	}
 
 	if (StartingLine < 0)
@@ -520,6 +548,14 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 		glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
 		RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
 	}
+
+	if (MaterialsConfig.bMergeSectionsByMaterial)
+	{
+		Asset->GetParser()->MergePrimitivesByMaterial(RuntimeLOD.Primitives);
+	}
+
+	// cache the mesh
+	RuntimeOBJCacheData->Objects.Add(ObjectName, RuntimeLOD);
 
 	return true;
 }
