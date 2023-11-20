@@ -154,6 +154,11 @@ namespace glTFRuntimeOBJ
 				continue;
 			}
 
+			if (!Vertices.IsValidIndex(VertexIndex))
+			{
+				continue;
+			}
+
 			const int32 PositionIndex = Primitive.Positions.Add(Vertices[VertexIndex]);
 
 			if (UVs.Num() > 0)
