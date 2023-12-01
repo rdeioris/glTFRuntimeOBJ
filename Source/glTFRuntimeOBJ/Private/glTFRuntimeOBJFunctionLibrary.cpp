@@ -2,6 +2,7 @@
 
 
 #include "glTFRuntimeOBJFunctionLibrary.h"
+#include "CompGeom/PolygonTriangulation.h"
 
 
 struct FglTFRuntimeOBJCacheData : FglTFRuntimePluginCacheData
@@ -39,18 +40,19 @@ namespace glTFRuntimeOBJ
 	void FillLinesFromBlob(const TArray64<uint8>& Blob, TArray<TArray<FString>>& Lines)
 	{
 		TArray<FString> CurrentLine;
-		FString CurrentString;
+		TArray<uint8> CurrentString;
 
 		for (int64 Index = 0; Index < Blob.Num(); Index++)
 		{
-			const char Char = static_cast<char>(Blob[Index]);
+			const uint8 Char = Blob[Index];
 			if (Char == ' ' || Char == '\t' || Char == '\r' || Char == '\n')
 			{
-				if (!CurrentString.IsEmpty())
+				if (CurrentString.Num() > 0)
 				{
-					CurrentLine.Add(CurrentString);
+					CurrentString.Add(0);
+					CurrentLine.Add(UTF8_TO_TCHAR(CurrentString.GetData()));
 				}
-				CurrentString = "";
+				CurrentString.Empty();
 				if (Char == '\r' || Char == '\n')
 				{
 					if (CurrentLine.Num() > 0)
@@ -62,7 +64,7 @@ namespace glTFRuntimeOBJ
 			}
 			else
 			{
-				CurrentString += Char;
+				CurrentString.Add(Char);
 			}
 		}
 	}
@@ -129,6 +131,15 @@ namespace glTFRuntimeOBJ
 				if (Asset->GetParser()->LoadPathToBlob(MaterialFilename, MaterialBlob))
 				{
 					FillLinesFromBlob(MaterialBlob, RuntimeOBJCacheData->MaterialLines);
+				}
+				// fallback to filename.mtl
+				else
+				{
+					const FString MaterialFallbackFilename = Asset->GetParser()->GetBaseFilename() + ".mtl";
+					if (Asset->GetParser()->LoadPathToBlob(MaterialFallbackFilename, MaterialBlob))
+					{
+						FillLinesFromBlob(MaterialBlob, RuntimeOBJCacheData->MaterialLines);
+					}
 				}
 			}
 		}
@@ -216,6 +227,8 @@ namespace glTFRuntimeOBJ
 			return;
 		}
 
+		Material.MaterialType = EglTFRuntimeMaterialType::TwoSided;
+
 		// fill material
 		for (int32 LineIndex = StartingLine; LineIndex < RuntimeOBJCacheData->MaterialLines.Num(); LineIndex++)
 		{
@@ -245,7 +258,7 @@ namespace glTFRuntimeOBJ
 					if (Material.BaseColorFactor.A < 1)
 					{
 						Material.bTranslucent = true;
-						Material.MaterialType = EglTFRuntimeMaterialType::Translucent;
+						Material.MaterialType = EglTFRuntimeMaterialType::TwoSidedTranslucent;
 					}
 				}
 				continue;
@@ -259,7 +272,7 @@ namespace glTFRuntimeOBJ
 					if (Material.BaseColorFactor.A < 1)
 					{
 						Material.bTranslucent = true;
-						Material.MaterialType = EglTFRuntimeMaterialType::Translucent;
+						Material.MaterialType = EglTFRuntimeMaterialType::TwoSidedTranslucent;
 					}
 				}
 				continue;
@@ -476,58 +489,75 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 				return false;
 			}
 
-			for (int32 FaceVertexIndex = 0; FaceVertexIndex < 3; FaceVertexIndex++)
+			const int32 NumVertices = Line.Num() - 1;
+
+			// complex polygons ?
+			if (NumVertices > 3)
 			{
-				TArray<FString> FaceVertexParts;
-				Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
-
-				TStaticArray<TPair<uint32, bool>, 3> Index;
-
-				Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
-				Index[1] = TPair<uint32, bool>(0, false);
-				Index[2] = TPair<uint32, bool>(0, false);
-
-				if (FaceVertexParts.Num() > 1)
+				TArray<FVector> PolygonVertices;
+				TArray<TStaticArray<TPair<uint32, bool>, 3>> PolygonIndices;
+				for (int32 FaceVertexIndex = 0; FaceVertexIndex < NumVertices; FaceVertexIndex++)
 				{
-					Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
+					TArray<FString> FaceVertexParts;
+					Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
+
+					TStaticArray<TPair<uint32, bool>, 3> Index;
+
+					Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
+
+					PolygonVertices.Add(Vertices[Index[0].Key]);
+
+					Index[1] = TPair<uint32, bool>(0, false);
+					Index[2] = TPair<uint32, bool>(0, false);
+
+					if (FaceVertexParts.Num() > 1)
+					{
+						Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
+					}
+
+					if (FaceVertexParts.Num() > 2)
+					{
+						Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
+					}
+
+					PolygonIndices.Add(Index);
 				}
 
-				if (FaceVertexParts.Num() > 2)
-				{
-					Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
-				}
+				TArray<UE::Geometry::FIndex3i> Triangles;
+				PolygonTriangulation::TriangulateSimplePolygon(PolygonVertices, Triangles);
 
-				Indices.Add(Index);
+				for (const UE::Geometry::FIndex3i& Triangle : Triangles)
+				{
+					Indices.Add(PolygonIndices[Triangle.A]);
+					Indices.Add(PolygonIndices[Triangle.C]);
+					Indices.Add(PolygonIndices[Triangle.B]);
+				}
 			}
-
-
-			// quad ?
-			if (Line.Num() > 4)
+			else
 			{
-				TArray<FString> FaceVertexParts;
-				Line[4].ParseIntoArray(FaceVertexParts, TEXT("/"));
-
-				TStaticArray<TPair<uint32, bool>, 3> FourthIndex;
-
-				FourthIndex[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
-				FourthIndex[1] = TPair<uint32, bool>(0, false);
-				FourthIndex[2] = TPair<uint32, bool>(0, false);
-
-				if (FaceVertexParts.Num() > 1)
+				for (int32 FaceVertexIndex = 0; FaceVertexIndex < 3; FaceVertexIndex++)
 				{
-					FourthIndex[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
-				}
+					TArray<FString> FaceVertexParts;
+					Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
 
-				if (FaceVertexParts.Num() > 2)
-				{
-					FourthIndex[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
-				}
+					TStaticArray<TPair<uint32, bool>, 3> Index;
 
-				const TStaticArray<TPair<uint32, bool>, 3> ThirdIndex = Indices.Last();
-				const TStaticArray<TPair<uint32, bool>, 3> FirstIndex = Indices.Last(2);
-				Indices.Add(ThirdIndex);
-				Indices.Add(FourthIndex);
-				Indices.Add(FirstIndex);
+					Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
+					Index[1] = TPair<uint32, bool>(0, false);
+					Index[2] = TPair<uint32, bool>(0, false);
+
+					if (FaceVertexParts.Num() > 1)
+					{
+						Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
+					}
+
+					if (FaceVertexParts.Num() > 2)
+					{
+						Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
+					}
+
+					Indices.Add(Index);
+				}
 			}
 			continue;
 		}
@@ -535,6 +565,13 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 		// material
 		if (Line[0] == "usemtl")
 		{
+			if (Indices.Num() > 0)
+			{
+				glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
+				RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
+			}
+			Indices.Empty();
+			Primitive = FglTFRuntimePrimitive();
 			Primitive.MaterialName = glTFRuntimeOBJ::GetRemainingString(Line, 1);
 			FglTFRuntimeMaterial Material;
 			glTFRuntimeOBJ::FillMaterial(Asset, Primitive.MaterialName, Material, MaterialsConfig);

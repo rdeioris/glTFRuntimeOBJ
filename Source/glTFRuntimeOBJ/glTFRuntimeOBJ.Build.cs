@@ -36,7 +36,8 @@ public class glTFRuntimeOBJ : ModuleRules
 			{
 				"CoreUObject",
 				"Engine",
-				"glTFRuntime"
+				"glTFRuntime",
+				"GeometryCore"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
