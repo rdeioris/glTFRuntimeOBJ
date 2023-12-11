@@ -457,6 +457,8 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 
 	TArray<TStaticArray<TPair<uint32, bool>, 3>> Indices;
 
+	RuntimeLOD.Empty();
+
 	FglTFRuntimePrimitive Primitive;
 	Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
 
