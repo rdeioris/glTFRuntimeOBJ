@@ -36,14 +36,23 @@ public class glTFRuntimeOBJ : ModuleRules
 			{
 				"CoreUObject",
 				"Engine",
-				"glTFRuntime",
-				"GeometryCore"
+				"glTFRuntime"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
-		
-		
-		DynamicallyLoadedModuleNames.AddRange(
+
+
+        if (Target.Version.MajorVersion >= 5)
+        {
+            PrivateDependencyModuleNames.Add("GeometryCore");
+        }
+		else
+		{
+            PrivateDependencyModuleNames.Add("GeometricObjects");
+        }
+
+
+        DynamicallyLoadedModuleNames.AddRange(
 			new string[]
 			{
 				// ... add any modules that your module loads dynamically here ...
