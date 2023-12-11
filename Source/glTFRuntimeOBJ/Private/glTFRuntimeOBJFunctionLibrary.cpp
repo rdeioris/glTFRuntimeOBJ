@@ -499,7 +499,11 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 			// complex polygons ?
 			if (NumVertices > 3)
 			{
+#if ENGINE_MAJOR_VERSION >= 5
 				TArray<FVector> PolygonVertices;
+#else
+				TArray<FVector3<float>> PolygonVertices;
+#endif
 				TArray<TStaticArray<TPair<uint32, bool>, 3>> PolygonIndices;
 				for (int32 FaceVertexIndex = 0; FaceVertexIndex < NumVertices; FaceVertexIndex++)
 				{
@@ -528,10 +532,18 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 					PolygonIndices.Add(Index);
 				}
 
+#if ENGINE_MAJOR_VERSION >= 5
 				TArray<UE::Geometry::FIndex3i> Triangles;
+#else
+				TArray<FIndex3i> Triangles;
+#endif
 				PolygonTriangulation::TriangulateSimplePolygon(PolygonVertices, Triangles);
 
+#if ENGINE_MAJOR_VERSION >= 5
 				for (const UE::Geometry::FIndex3i& Triangle : Triangles)
+#else
+				for (const FIndex3i& Triangle : Triangles)
+#endif
 				{
 					Indices.Add(PolygonIndices[Triangle.A]);
 					Indices.Add(PolygonIndices[Triangle.C]);
