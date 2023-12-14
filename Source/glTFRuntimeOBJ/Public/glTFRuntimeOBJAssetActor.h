@@ -33,6 +33,9 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "glTFRuntime|OBJ", meta = (DisplayName = "On StaticMeshComponent Created"))
 	void ReceiveOnStaticMeshComponentCreated(UStaticMeshComponent* StaticMeshComponent);
 
+	UFUNCTION(BlueprintNativeEvent, Category = "glTFRuntime|OBJ", meta = (DisplayName = "On Scenes Loaded"))
+		void ReceiveOnScenesLoaded();
+
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"), Category = "glTFRuntime|OBJ")
 	USceneComponent* AssetRoot;
