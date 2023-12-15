@@ -208,6 +208,8 @@ namespace glTFRuntimeOBJ
 
 	void FillMaterial(UglTFRuntimeAsset* Asset, const FString& MaterialName, FglTFRuntimeMaterial& Material, const FglTFRuntimeMaterialsConfig& MaterialsConfig)
 	{
+		FScopeLock Lock(&(Asset->GetParser()->PluginsCacheDataLock));
+
 		TSharedPtr<FglTFRuntimeOBJCacheData> RuntimeOBJCacheData = GetCacheData(Asset);
 
 		int32 StartingLine = -1;
@@ -315,47 +317,350 @@ namespace glTFRuntimeOBJ
 			}
 		}
 	}
+
+	bool LoadObjectAsRuntimeLOD(UglTFRuntimeAsset* Asset, const FString& ObjectName, FglTFRuntimeMeshLOD& RuntimeLOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig)
+	{
+		FScopeLock Lock(&(Asset->GetParser()->PluginsCacheDataLock));
+
+		TSharedPtr<FglTFRuntimeOBJCacheData> RuntimeOBJCacheData = glTFRuntimeOBJ::GetCacheData(Asset);
+		if (!RuntimeOBJCacheData)
+		{
+			return false;
+		}
+
+		if (RuntimeOBJCacheData->Objects.Contains(ObjectName))
+		{
+			RuntimeLOD = RuntimeOBJCacheData->Objects[ObjectName];
+			return true;
+		}
+
+		int32 StartingLine = -1;
+
+		if (!ObjectName.IsEmpty())
+		{
+			for (int32 LineIndex = 0; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
+			{
+				const TArray<FString>& Line = RuntimeOBJCacheData->GeometryLines[LineIndex];
+
+				if (Line[0] == "o")
+				{
+					if (glTFRuntimeOBJ::GetRemainingString(Line, 1) == ObjectName)
+					{
+						StartingLine = LineIndex + 1;
+						break;
+					}
+				}
+			}
+		}
+		else
+		{
+			// empty name, get the first unammed object
+			StartingLine = 0;
+		}
+
+		if (StartingLine < 0)
+		{
+			return false;
+		}
+
+		TArray<FVector> Vertices;
+		TArray<FVector> Normals;
+		TArray<FVector2D> UVs;
+
+		// step 1, gather vertices, normals and uvs
+		for (int32 LineIndex = 0; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
+		{
+			const TArray<FString>& Line = RuntimeOBJCacheData->GeometryLines[LineIndex];
+
+			// vertex
+			if (Line[0] == "v")
+			{
+				if (Line.Num() < 4)
+				{
+					return false;
+				}
+
+				FVector Vertex = FVector(FCString::Atod(*(Line[1])), FCString::Atod(*(Line[2])), FCString::Atod(*(Line[3])));
+				Vertices.Add(Asset->GetParser()->TransformPosition(Vertex));
+				continue;
+			}
+
+			// uv
+			if (Line[0] == "vt")
+			{
+				if (Line.Num() < 3)
+				{
+					return false;
+				}
+
+				FVector2D UV = FVector2D(FCString::Atod(*(Line[1])), 1 - FCString::Atod(*(Line[2])));
+				UVs.Add(UV);
+				continue;
+			}
+
+			// normal
+			if (Line[0] == "vn")
+			{
+				if (Line.Num() < 4)
+				{
+					return false;
+				}
+
+				FVector Normal = FVector(FCString::Atod(*(Line[1])), FCString::Atod(*(Line[2])), FCString::Atod(*(Line[3])));
+				Normals.Add(Asset->GetParser()->TransformVector(Normal));
+				continue;
+			}
+		}
+
+		TArray<TStaticArray<TPair<uint32, bool>, 3>> Indices;
+
+		RuntimeLOD.Empty();
+
+		FglTFRuntimePrimitive Primitive;
+		Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
+
+		// step 2, build primitives
+		for (int32 LineIndex = StartingLine; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
+		{
+			const TArray<FString>& Line = RuntimeOBJCacheData->GeometryLines[LineIndex];
+
+			// end of object
+			if (Line[0] == "o")
+			{
+				break;
+			}
+
+			// group
+			if (Line[0] == "g")
+			{
+				if (Indices.Num() > 0)
+				{
+					glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
+					RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
+				}
+				Indices.Empty();
+				Primitive = FglTFRuntimePrimitive();
+				Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
+				Primitive.MaterialName = glTFRuntimeOBJ::GetRemainingString(Line, 1);
+				continue;
+			}
+
+			// face
+			if (Line[0] == "f")
+			{
+				if (Line.Num() < 4)
+				{
+					return false;
+				}
+
+				const int32 NumVertices = Line.Num() - 1;
+
+				// complex polygons ?
+				if (NumVertices > 3)
+				{
+#if ENGINE_MAJOR_VERSION >= 5
+					TArray<FVector> PolygonVertices;
+#else
+					TArray<FVector3<float>> PolygonVertices;
+#endif
+					TArray<TStaticArray<TPair<uint32, bool>, 3>> PolygonIndices;
+					for (int32 FaceVertexIndex = 0; FaceVertexIndex < NumVertices; FaceVertexIndex++)
+					{
+						TArray<FString> FaceVertexParts;
+						Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
+
+						TStaticArray<TPair<uint32, bool>, 3> Index;
+
+						Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
+
+						PolygonVertices.Add(Vertices[Index[0].Key]);
+
+						Index[1] = TPair<uint32, bool>(0, false);
+						Index[2] = TPair<uint32, bool>(0, false);
+
+						if (FaceVertexParts.Num() > 1)
+						{
+							Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
+						}
+
+						if (FaceVertexParts.Num() > 2)
+						{
+							Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
+						}
+
+						PolygonIndices.Add(Index);
+					}
+
+#if ENGINE_MAJOR_VERSION >= 5
+					TArray<UE::Geometry::FIndex3i> Triangles;
+#else
+					TArray<FIndex3i> Triangles;
+#endif
+					PolygonTriangulation::TriangulateSimplePolygon(PolygonVertices, Triangles);
+
+#if ENGINE_MAJOR_VERSION >= 5
+					for (const UE::Geometry::FIndex3i& Triangle : Triangles)
+#else
+					for (const FIndex3i& Triangle : Triangles)
+#endif
+					{
+						Indices.Add(PolygonIndices[Triangle.A]);
+						Indices.Add(PolygonIndices[Triangle.C]);
+						Indices.Add(PolygonIndices[Triangle.B]);
+					}
+				}
+				else
+				{
+					for (int32 FaceVertexIndex = 0; FaceVertexIndex < 3; FaceVertexIndex++)
+					{
+						TArray<FString> FaceVertexParts;
+						Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
+
+						TStaticArray<TPair<uint32, bool>, 3> Index;
+
+						Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
+						Index[1] = TPair<uint32, bool>(0, false);
+						Index[2] = TPair<uint32, bool>(0, false);
+
+						if (FaceVertexParts.Num() > 1)
+						{
+							Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
+						}
+
+						if (FaceVertexParts.Num() > 2)
+						{
+							Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
+						}
+
+						Indices.Add(Index);
+					}
+				}
+				continue;
+			}
+
+			// material
+			if (Line[0] == "usemtl")
+			{
+				if (Indices.Num() > 0)
+				{
+					glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
+					RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
+				}
+				Indices.Empty();
+				Primitive = FglTFRuntimePrimitive();
+				Primitive.MaterialName = glTFRuntimeOBJ::GetRemainingString(Line, 1);
+				FglTFRuntimeMaterial Material;
+				glTFRuntimeOBJ::FillMaterial(Asset, Primitive.MaterialName, Material, MaterialsConfig);
+				Primitive.Material = Asset->GetParser()->BuildMaterial(-1, Primitive.MaterialName, Material, MaterialsConfig, false);
+				continue;
+			}
+		}
+
+		if (Indices.Num() > 0)
+		{
+			glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
+			RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
+		}
+
+		if (MaterialsConfig.bMergeSectionsByMaterial)
+		{
+			Asset->GetParser()->MergePrimitivesByMaterial(RuntimeLOD.Primitives);
+		}
+
+		// cache the mesh
+		RuntimeOBJCacheData->Objects.Add(ObjectName, RuntimeLOD);
+
+		return true;
+	}
+
+	TArray<FString> GetObjectNames(UglTFRuntimeAsset* Asset)
+	{
+		TArray<FString> Names;
+
+		if (!Asset)
+		{
+			return Names;
+		}
+
+		FScopeLock Lock(&(Asset->GetParser()->PluginsCacheDataLock));
+
+		TSharedPtr<FglTFRuntimeOBJCacheData> RuntimeOBJCacheData = glTFRuntimeOBJ::GetCacheData(Asset);
+		if (!RuntimeOBJCacheData)
+		{
+			return Names;
+		}
+
+		if (RuntimeOBJCacheData->ObjectNames.Num() > 0)
+		{
+			return RuntimeOBJCacheData->ObjectNames;
+		}
+
+		for (const TArray<FString>& Line : RuntimeOBJCacheData->GeometryLines)
+		{
+			if (Line[0] == "o")
+			{
+				Names.Add(glTFRuntimeOBJ::GetRemainingString(Line, 1));
+			}
+		}
+
+		if (Names.Num() > 0)
+		{
+			RuntimeOBJCacheData->ObjectNames = Names;
+		}
+		else
+		{
+			// add an empty entry for assets without objects
+			RuntimeOBJCacheData->ObjectNames.Add("");
+		}
+
+		return RuntimeOBJCacheData->ObjectNames;
+	}
 }
 
 TArray<FString> UglTFRuntimeOBJFunctionLibrary::GetOBJObjectNames(UglTFRuntimeAsset* Asset)
 {
-	TArray<FString> Names;
+	return glTFRuntimeOBJ::GetObjectNames(Asset);
+}
 
+void UglTFRuntimeOBJFunctionLibrary::GetOBJObjectNamesAsync(UglTFRuntimeAsset* Asset, const FglTFRuntimeOBJObjectNamesAsync& AsyncCallback)
+{
 	if (!Asset)
 	{
-		return Names;
+		AsyncCallback.ExecuteIfBound(TArray<FString>());
+		return;
 	}
 
-	TSharedPtr<FglTFRuntimeOBJCacheData> RuntimeOBJCacheData = glTFRuntimeOBJ::GetCacheData(Asset);
-	if (!RuntimeOBJCacheData)
-	{
-		return Names;
-	}
-
-	if (RuntimeOBJCacheData->ObjectNames.Num() > 0)
-	{
-		return RuntimeOBJCacheData->ObjectNames;
-	}
-
-	for (const TArray<FString>& Line : RuntimeOBJCacheData->GeometryLines)
-	{
-		if (Line[0] == "o")
+	Async(EAsyncExecution::Thread, [Asset, AsyncCallback]()
 		{
-			Names.Add(glTFRuntimeOBJ::GetRemainingString(Line, 1));
+			TArray<FString> Names = glTFRuntimeOBJ::GetObjectNames(Asset);
+			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([&, AsyncCallback]()
+				{
+					AsyncCallback.ExecuteIfBound(Names);
+				}, TStatId(), nullptr, ENamedThreads::GameThread);
+			FTaskGraphInterface::Get().WaitUntilTaskCompletes(Task);
 		}
+	);
+}
+
+void UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLODAsync(UglTFRuntimeAsset* Asset, const FString& ObjectName, const FglTFRuntimeMeshLODAsync& AsyncCallback, const FglTFRuntimeMaterialsConfig& MaterialsConfig)
+{
+	if (!Asset)
+	{
+		AsyncCallback.ExecuteIfBound(false, FglTFRuntimeMeshLOD());
+		return;
 	}
 
-	if (Names.Num() > 0)
-	{
-		RuntimeOBJCacheData->ObjectNames = Names;
-	}
-	else
-	{
-		// add an empty entry for assets without objects
-		RuntimeOBJCacheData->ObjectNames.Add("");
-	}
-
-	return RuntimeOBJCacheData->ObjectNames;
+	Async(EAsyncExecution::Thread, [Asset, ObjectName, MaterialsConfig, AsyncCallback]()
+		{
+			FglTFRuntimeMeshLOD RuntimeLOD;
+			bool bSuccess = glTFRuntimeOBJ::LoadObjectAsRuntimeLOD(Asset, ObjectName, RuntimeLOD, MaterialsConfig);
+			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([&, AsyncCallback]()
+				{
+					AsyncCallback.ExecuteIfBound(bSuccess, RuntimeLOD);
+				}, TStatId(), nullptr, ENamedThreads::GameThread);
+			FTaskGraphInterface::Get().WaitUntilTaskCompletes(Task);
+		}
+	);
 }
 
 bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asset, const FString& ObjectName, FglTFRuntimeMeshLOD& RuntimeLOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig)
@@ -365,253 +670,5 @@ bool UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(UglTFRuntimeAsset* Asse
 		return false;
 	}
 
-	TSharedPtr<FglTFRuntimeOBJCacheData> RuntimeOBJCacheData = glTFRuntimeOBJ::GetCacheData(Asset);
-	if (!RuntimeOBJCacheData)
-	{
-		return false;
-	}
-
-	if (RuntimeOBJCacheData->Objects.Contains(ObjectName))
-	{
-		RuntimeLOD = RuntimeOBJCacheData->Objects[ObjectName];
-		return true;
-	}
-
-	int32 StartingLine = -1;
-
-	if (!ObjectName.IsEmpty())
-	{
-		for (int32 LineIndex = 0; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
-		{
-			const TArray<FString>& Line = RuntimeOBJCacheData->GeometryLines[LineIndex];
-
-			if (Line[0] == "o")
-			{
-				if (glTFRuntimeOBJ::GetRemainingString(Line, 1) == ObjectName)
-				{
-					StartingLine = LineIndex + 1;
-					break;
-				}
-			}
-		}
-	}
-	else
-	{
-		// empty name, get the first unammed object
-		StartingLine = 0;
-	}
-
-	if (StartingLine < 0)
-	{
-		return false;
-	}
-
-	TArray<FVector> Vertices;
-	TArray<FVector> Normals;
-	TArray<FVector2D> UVs;
-
-	// step 1, gather vertices, normals and uvs
-	for (int32 LineIndex = 0; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
-	{
-		const TArray<FString>& Line = RuntimeOBJCacheData->GeometryLines[LineIndex];
-
-		// vertex
-		if (Line[0] == "v")
-		{
-			if (Line.Num() < 4)
-			{
-				return false;
-			}
-
-			FVector Vertex = FVector(FCString::Atod(*(Line[1])), FCString::Atod(*(Line[2])), FCString::Atod(*(Line[3])));
-			Vertices.Add(Asset->GetParser()->TransformPosition(Vertex));
-			continue;
-		}
-
-		// uv
-		if (Line[0] == "vt")
-		{
-			if (Line.Num() < 3)
-			{
-				return false;
-			}
-
-			FVector2D UV = FVector2D(FCString::Atod(*(Line[1])), 1 - FCString::Atod(*(Line[2])));
-			UVs.Add(UV);
-			continue;
-		}
-
-		// normal
-		if (Line[0] == "vn")
-		{
-			if (Line.Num() < 4)
-			{
-				return false;
-			}
-
-			FVector Normal = FVector(FCString::Atod(*(Line[1])), FCString::Atod(*(Line[2])), FCString::Atod(*(Line[3])));
-			Normals.Add(Asset->GetParser()->TransformVector(Normal));
-			continue;
-		}
-	}
-
-	TArray<TStaticArray<TPair<uint32, bool>, 3>> Indices;
-
-	RuntimeLOD.Empty();
-
-	FglTFRuntimePrimitive Primitive;
-	Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
-
-	// step 2, build primitives
-	for (int32 LineIndex = StartingLine; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
-	{
-		const TArray<FString>& Line = RuntimeOBJCacheData->GeometryLines[LineIndex];
-
-		// end of object
-		if (Line[0] == "o")
-		{
-			break;
-		}
-
-		// group
-		if (Line[0] == "g")
-		{
-			if (Indices.Num() > 0)
-			{
-				glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
-				RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
-			}
-			Indices.Empty();
-			Primitive = FglTFRuntimePrimitive();
-			Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
-			Primitive.MaterialName = glTFRuntimeOBJ::GetRemainingString(Line, 1);
-			continue;
-		}
-
-		// face
-		if (Line[0] == "f")
-		{
-			if (Line.Num() < 4)
-			{
-				return false;
-			}
-
-			const int32 NumVertices = Line.Num() - 1;
-
-			// complex polygons ?
-			if (NumVertices > 3)
-			{
-#if ENGINE_MAJOR_VERSION >= 5
-				TArray<FVector> PolygonVertices;
-#else
-				TArray<FVector3<float>> PolygonVertices;
-#endif
-				TArray<TStaticArray<TPair<uint32, bool>, 3>> PolygonIndices;
-				for (int32 FaceVertexIndex = 0; FaceVertexIndex < NumVertices; FaceVertexIndex++)
-				{
-					TArray<FString> FaceVertexParts;
-					Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
-
-					TStaticArray<TPair<uint32, bool>, 3> Index;
-
-					Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
-
-					PolygonVertices.Add(Vertices[Index[0].Key]);
-
-					Index[1] = TPair<uint32, bool>(0, false);
-					Index[2] = TPair<uint32, bool>(0, false);
-
-					if (FaceVertexParts.Num() > 1)
-					{
-						Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
-					}
-
-					if (FaceVertexParts.Num() > 2)
-					{
-						Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
-					}
-
-					PolygonIndices.Add(Index);
-				}
-
-#if ENGINE_MAJOR_VERSION >= 5
-				TArray<UE::Geometry::FIndex3i> Triangles;
-#else
-				TArray<FIndex3i> Triangles;
-#endif
-				PolygonTriangulation::TriangulateSimplePolygon(PolygonVertices, Triangles);
-
-#if ENGINE_MAJOR_VERSION >= 5
-				for (const UE::Geometry::FIndex3i& Triangle : Triangles)
-#else
-				for (const FIndex3i& Triangle : Triangles)
-#endif
-				{
-					Indices.Add(PolygonIndices[Triangle.A]);
-					Indices.Add(PolygonIndices[Triangle.C]);
-					Indices.Add(PolygonIndices[Triangle.B]);
-				}
-			}
-			else
-			{
-				for (int32 FaceVertexIndex = 0; FaceVertexIndex < 3; FaceVertexIndex++)
-				{
-					TArray<FString> FaceVertexParts;
-					Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
-
-					TStaticArray<TPair<uint32, bool>, 3> Index;
-
-					Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
-					Index[1] = TPair<uint32, bool>(0, false);
-					Index[2] = TPair<uint32, bool>(0, false);
-
-					if (FaceVertexParts.Num() > 1)
-					{
-						Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
-					}
-
-					if (FaceVertexParts.Num() > 2)
-					{
-						Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
-					}
-
-					Indices.Add(Index);
-				}
-			}
-			continue;
-		}
-
-		// material
-		if (Line[0] == "usemtl")
-		{
-			if (Indices.Num() > 0)
-			{
-				glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
-				RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
-			}
-			Indices.Empty();
-			Primitive = FglTFRuntimePrimitive();
-			Primitive.MaterialName = glTFRuntimeOBJ::GetRemainingString(Line, 1);
-			FglTFRuntimeMaterial Material;
-			glTFRuntimeOBJ::FillMaterial(Asset, Primitive.MaterialName, Material, MaterialsConfig);
-			Primitive.Material = Asset->GetParser()->BuildMaterial(-1, Primitive.MaterialName, Material, MaterialsConfig, false);
-			continue;
-		}
-	}
-
-	if (Indices.Num() > 0)
-	{
-		glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
-		RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
-	}
-
-	if (MaterialsConfig.bMergeSectionsByMaterial)
-	{
-		Asset->GetParser()->MergePrimitivesByMaterial(RuntimeLOD.Primitives);
-	}
-
-	// cache the mesh
-	RuntimeOBJCacheData->Objects.Add(ObjectName, RuntimeLOD);
-
-	return true;
+	return glTFRuntimeOBJ::LoadObjectAsRuntimeLOD(Asset, ObjectName, RuntimeLOD, MaterialsConfig);
 }
