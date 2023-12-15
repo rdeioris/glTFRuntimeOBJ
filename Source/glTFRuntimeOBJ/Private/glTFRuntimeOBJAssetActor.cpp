@@ -44,6 +44,8 @@ void AglTFRuntimeOBJAssetActor::BeginPlay()
 			ReceiveOnStaticMeshComponentCreated(StaticMeshComponent);
 		}
 	}
+
+	ReceiveOnScenesLoaded();
 }
 
 // Called every frame
@@ -53,6 +55,11 @@ void AglTFRuntimeOBJAssetActor::Tick(float DeltaTime)
 }
 
 void AglTFRuntimeOBJAssetActor::ReceiveOnStaticMeshComponentCreated_Implementation(UStaticMeshComponent* StaticMeshComponent)
+{
+
+}
+
+void AglTFRuntimeOBJAssetActor::ReceiveOnScenesLoaded_Implementation()
 {
 
 }
