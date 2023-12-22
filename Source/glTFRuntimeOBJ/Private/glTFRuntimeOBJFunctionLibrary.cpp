@@ -424,8 +424,8 @@ namespace glTFRuntimeOBJ
 		{
 			const TArray<FString>& Line = RuntimeOBJCacheData->GeometryLines[LineIndex];
 
-			// end of object
-			if (Line[0] == "o")
+			// end of object?
+			if (Line[0] == "o" && Indices.Num() > 0)
 			{
 				break;
 			}
@@ -551,7 +551,14 @@ namespace glTFRuntimeOBJ
 				Primitive.MaterialName = glTFRuntimeOBJ::GetRemainingString(Line, 1);
 				FglTFRuntimeMaterial Material;
 				glTFRuntimeOBJ::FillMaterial(Asset, Primitive.MaterialName, Material, MaterialsConfig);
-				Primitive.Material = Asset->GetParser()->BuildMaterial(-1, Primitive.MaterialName, Material, MaterialsConfig, false);
+
+
+				FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([&]()
+					{
+						Primitive.Material = Asset->GetParser()->BuildMaterial(-1, Primitive.MaterialName, Material, MaterialsConfig, false);
+					}, TStatId(), nullptr, ENamedThreads::GameThread);
+				FTaskGraphInterface::Get().WaitUntilTaskCompletes(Task);
+
 				continue;
 			}
 		}
