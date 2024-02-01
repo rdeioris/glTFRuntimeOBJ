@@ -67,6 +67,17 @@ namespace glTFRuntimeOBJ
 				CurrentString.Add(Char);
 			}
 		}
+
+		if (CurrentString.Num() > 0)
+		{
+			CurrentString.Add(0);
+			CurrentLine.Add(UTF8_TO_TCHAR(CurrentString.GetData()));
+		}
+
+		if (CurrentLine.Num() > 0)
+		{
+			Lines.Add(CurrentLine);
+		}
 	}
 
 	TSharedPtr<FglTFRuntimeOBJCacheData> GetCacheData(UglTFRuntimeAsset* Asset)
