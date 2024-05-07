@@ -3,6 +3,12 @@
 
 #include "glTFRuntimeOBJFunctionLibrary.h"
 #include "CompGeom/PolygonTriangulation.h"
+#include "Runtime/Launch/Resources/Version.h"
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 2
+#include "MaterialDomain.h"
+#else
+#include "MaterialShared.h"
+#endif
 
 
 struct FglTFRuntimeOBJCacheData : FglTFRuntimePluginCacheData

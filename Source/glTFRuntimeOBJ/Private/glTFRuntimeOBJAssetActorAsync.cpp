@@ -71,6 +71,9 @@ void AglTFRuntimeOBJAssetActorAsync::LoadObjectsAsync(const TArray<FString>& Nam
 		StaticMeshComponent->RegisterComponent();
 		AddInstanceComponent(StaticMeshComponent);
 		MeshesToLoad.Add(StaticMeshComponent, ObjectName);
+
+		StaticMeshComponent->ComponentTags.Add(*FString::Printf(TEXT("glTFRuntime:NodeName:%s"), *ObjectName));
+		StaticMeshComponent->ComponentTags.Add(TEXT("glTFRuntime:Format:OBJ"));
 	}
 
 	if (MeshesToLoad.Num() == 0)
