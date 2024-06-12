@@ -569,12 +569,18 @@ namespace glTFRuntimeOBJ
 				FglTFRuntimeMaterial Material;
 				glTFRuntimeOBJ::FillMaterial(Asset, Primitive.MaterialName, Material, MaterialsConfig);
 
-
-				FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([&]()
-					{
-						Primitive.Material = Asset->GetParser()->BuildMaterial(-1, Primitive.MaterialName, Material, MaterialsConfig, false);
-					}, TStatId(), nullptr, ENamedThreads::GameThread);
-				FTaskGraphInterface::Get().WaitUntilTaskCompletes(Task);
+				if (IsInGameThread())
+				{
+					Primitive.Material = Asset->GetParser()->BuildMaterial(-1, Primitive.MaterialName, Material, MaterialsConfig, false);
+				}
+				else
+				{
+					FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([&]()
+						{
+							Primitive.Material = Asset->GetParser()->BuildMaterial(-1, Primitive.MaterialName, Material, MaterialsConfig, false);
+						}, TStatId(), nullptr, ENamedThreads::GameThread);
+					FTaskGraphInterface::Get().WaitUntilTaskCompletes(Task);
+				}
 
 				continue;
 			}
