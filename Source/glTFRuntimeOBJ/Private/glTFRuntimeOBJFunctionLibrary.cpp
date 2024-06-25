@@ -175,8 +175,8 @@ namespace glTFRuntimeOBJ
 
 		for (int32 Index = 0; Index < Indices.Num(); Index++)
 		{
-			uint32 VertexIndex = Indices[Index][0].Key;
-			bool bHasVertex = Indices[Index][0].Value;
+			const uint32 VertexIndex = Indices[Index][0].Key;
+			const bool bHasVertex = Indices[Index][0].Value;
 			if (!bHasVertex)
 			{
 				continue;
@@ -191,10 +191,10 @@ namespace glTFRuntimeOBJ
 
 			if (UVs.Num() > 0)
 			{
-				uint32 UVIndex = Indices[Index][1].Key;
-				bool bHasUV = Indices[Index][1].Value;
+				const uint32 UVIndex = Indices[Index][1].Key;
+				const bool bHasUV = Indices[Index][1].Value;
 
-				if (bHasUV)
+				if (bHasUV && UVs.IsValidIndex(UVIndex))
 				{
 					Primitive.UVs[0].Add(UVs[UVIndex]);
 				}
@@ -206,10 +206,10 @@ namespace glTFRuntimeOBJ
 
 			if (Normals.Num() > 0)
 			{
-				uint32 NormalIndex = Indices[Index][2].Key;
-				bool bHasNormal = Indices[Index][2].Value;
+				const uint32 NormalIndex = Indices[Index][2].Key;
+				const bool bHasNormal = Indices[Index][2].Value;
 
-				if (bHasNormal)
+				if (bHasNormal && Normals.IsValidIndex(NormalIndex))
 				{
 					Primitive.Normals.Add(Normals[NormalIndex]);
 				}
@@ -484,7 +484,7 @@ namespace glTFRuntimeOBJ
 					for (int32 FaceVertexIndex = 0; FaceVertexIndex < NumVertices; FaceVertexIndex++)
 					{
 						TArray<FString> FaceVertexParts;
-						Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
+						Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"), false);
 
 						TStaticArray<TPair<uint32, bool>, 3> Index;
 
@@ -495,12 +495,12 @@ namespace glTFRuntimeOBJ
 						Index[1] = TPair<uint32, bool>(0, false);
 						Index[2] = TPair<uint32, bool>(0, false);
 
-						if (FaceVertexParts.Num() > 1)
+						if (FaceVertexParts.Num() > 1 && !FaceVertexParts[1].IsEmpty())
 						{
 							Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
 						}
 
-						if (FaceVertexParts.Num() > 2)
+						if (FaceVertexParts.Num() > 2 && !FaceVertexParts[2].IsEmpty())
 						{
 							Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
 						}
@@ -531,7 +531,7 @@ namespace glTFRuntimeOBJ
 					for (int32 FaceVertexIndex = 0; FaceVertexIndex < 3; FaceVertexIndex++)
 					{
 						TArray<FString> FaceVertexParts;
-						Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"));
+						Line[FaceVertexIndex + 1].ParseIntoArray(FaceVertexParts, TEXT("/"), false);
 
 						TStaticArray<TPair<uint32, bool>, 3> Index;
 
@@ -539,12 +539,12 @@ namespace glTFRuntimeOBJ
 						Index[1] = TPair<uint32, bool>(0, false);
 						Index[2] = TPair<uint32, bool>(0, false);
 
-						if (FaceVertexParts.Num() > 1)
+						if (FaceVertexParts.Num() > 1 && !FaceVertexParts[1].IsEmpty())
 						{
 							Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
 						}
 
-						if (FaceVertexParts.Num() > 2)
+						if (FaceVertexParts.Num() > 2 && !FaceVertexParts[2].IsEmpty())
 						{
 							Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
 						}
