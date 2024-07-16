@@ -455,9 +455,13 @@ namespace glTFRuntimeOBJ
 					glTFRuntimeOBJ::FixPrimitive(Primitive, Indices, Vertices, UVs, Normals);
 					RuntimeLOD.Primitives.Add(MoveTemp(Primitive));
 				}
+				// a usemtl could be already been parsed
+				else if (!Primitive.Material)
+				{
+					Primitive = FglTFRuntimePrimitive();
+					Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
+				}
 				Indices.Empty();
-				Primitive = FglTFRuntimePrimitive();
-				Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
 				Primitive.MaterialName = glTFRuntimeOBJ::GetRemainingString(Line, 1);
 				continue;
 			}
