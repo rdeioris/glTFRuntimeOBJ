@@ -436,6 +436,27 @@ namespace glTFRuntimeOBJ
 		FglTFRuntimePrimitive Primitive;
 		Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
 
+		auto GetFaceIndex = [](const FString& Part, const int32 NumVertices) -> uint32
+			{
+				int32 Value = FCString::Atoi(*Part);
+				if (Value > 0)
+				{
+					Value--;
+					if (Value < NumVertices)
+					{
+						return Value;
+					}
+				}
+				else if (Value < 0)
+				{
+					if (NumVertices >= Value)
+					{
+						return NumVertices + Value;
+					}
+				}
+				return 0;
+			};
+
 		// step 2, build primitives
 		for (int32 LineIndex = StartingLine; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
 		{
@@ -492,7 +513,7 @@ namespace glTFRuntimeOBJ
 
 						TStaticArray<TPair<uint32, bool>, 3> Index;
 
-						Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
+						Index[0] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[0], Vertices.Num()), true);
 
 						PolygonVertices.Add(Vertices[Index[0].Key]);
 
@@ -501,12 +522,12 @@ namespace glTFRuntimeOBJ
 
 						if (FaceVertexParts.Num() > 1 && !FaceVertexParts[1].IsEmpty())
 						{
-							Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
+							Index[1] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[1], UVs.Num()), true);
 						}
 
 						if (FaceVertexParts.Num() > 2 && !FaceVertexParts[2].IsEmpty())
 						{
-							Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
+							Index[2] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[1], Normals.Num()), true);
 						}
 
 						PolygonIndices.Add(Index);
@@ -539,18 +560,18 @@ namespace glTFRuntimeOBJ
 
 						TStaticArray<TPair<uint32, bool>, 3> Index;
 
-						Index[0] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[0])) - 1, true);
+						Index[0] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[0], Vertices.Num()), true);
 						Index[1] = TPair<uint32, bool>(0, false);
 						Index[2] = TPair<uint32, bool>(0, false);
 
 						if (FaceVertexParts.Num() > 1 && !FaceVertexParts[1].IsEmpty())
 						{
-							Index[1] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[1])) - 1, true);
+							Index[1] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[1], UVs.Num()), true);
 						}
 
 						if (FaceVertexParts.Num() > 2 && !FaceVertexParts[2].IsEmpty())
 						{
-							Index[2] = TPair<uint32, bool>(FCString::Atoi(*(FaceVertexParts[2])) - 1, true);
+							Index[2] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[2], Normals.Num()), true);
 						}
 
 						Indices.Add(Index);
