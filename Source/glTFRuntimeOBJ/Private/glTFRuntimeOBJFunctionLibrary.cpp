@@ -436,13 +436,13 @@ namespace glTFRuntimeOBJ
 		FglTFRuntimePrimitive Primitive;
 		Primitive.Material = UMaterial::GetDefaultMaterial(MD_Surface);
 
-		auto GetFaceIndex = [](const FString& Part, const int32 NumVertices) -> uint32
+		auto GetFaceIndex = [](const FString& Part, const int32 NumVertices, const int32 NumTotalVertices) -> uint32
 			{
 				int32 Value = FCString::Atoi(*Part);
 				if (Value > 0)
 				{
 					Value--;
-					if (Value < NumVertices)
+					if (Value < NumTotalVertices)
 					{
 						return Value;
 					}
@@ -453,14 +453,41 @@ namespace glTFRuntimeOBJ
 					{
 						return NumVertices + Value;
 					}
+					// probably not a good idea but most obj exporters are very lazy...
+					else if (NumTotalVertices >= Value)
+					{
+						return NumTotalVertices + Value;
+					}
 				}
 				return 0;
 			};
+
+		int32 CurrentVertexCounter = 0;
+		int32 CurrentUVCounter = 0;
+		int32 CurrentNormalCounter = 0;
 
 		// step 2, build primitives
 		for (int32 LineIndex = StartingLine; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
 		{
 			const TArray<FString>& Line = RuntimeOBJCacheData->GeometryLines[LineIndex];
+
+			if (Line[0] == "v")
+			{
+				CurrentVertexCounter++;
+				continue;
+			}
+
+			if (Line[0] == "vt")
+			{
+				CurrentUVCounter++;
+				continue;
+			}
+
+			if (Line[0] == "vn")
+			{
+				CurrentNormalCounter++;
+				continue;
+			}
 
 			// end of object?
 			if (Line[0] == "o" && Indices.Num() > 0)
@@ -513,7 +540,7 @@ namespace glTFRuntimeOBJ
 
 						TStaticArray<TPair<uint32, bool>, 3> Index;
 
-						Index[0] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[0], Vertices.Num()), true);
+						Index[0] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[0], CurrentVertexCounter, Vertices.Num()), true);
 
 						PolygonVertices.Add(Vertices[Index[0].Key]);
 
@@ -522,12 +549,12 @@ namespace glTFRuntimeOBJ
 
 						if (FaceVertexParts.Num() > 1 && !FaceVertexParts[1].IsEmpty())
 						{
-							Index[1] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[1], UVs.Num()), true);
+							Index[1] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[1], CurrentUVCounter, UVs.Num()), true);
 						}
 
 						if (FaceVertexParts.Num() > 2 && !FaceVertexParts[2].IsEmpty())
 						{
-							Index[2] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[1], Normals.Num()), true);
+							Index[2] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[2], CurrentNormalCounter, Normals.Num()), true);
 						}
 
 						PolygonIndices.Add(Index);
@@ -560,18 +587,18 @@ namespace glTFRuntimeOBJ
 
 						TStaticArray<TPair<uint32, bool>, 3> Index;
 
-						Index[0] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[0], Vertices.Num()), true);
+						Index[0] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[0], CurrentVertexCounter, Vertices.Num()), true);
 						Index[1] = TPair<uint32, bool>(0, false);
 						Index[2] = TPair<uint32, bool>(0, false);
 
 						if (FaceVertexParts.Num() > 1 && !FaceVertexParts[1].IsEmpty())
 						{
-							Index[1] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[1], UVs.Num()), true);
+							Index[1] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[1], CurrentUVCounter, UVs.Num()), true);
 						}
 
 						if (FaceVertexParts.Num() > 2 && !FaceVertexParts[2].IsEmpty())
 						{
-							Index[2] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[2], Normals.Num()), true);
+							Index[2] = TPair<uint32, bool>(GetFaceIndex(FaceVertexParts[2], CurrentNormalCounter, Normals.Num()), true);
 						}
 
 						Indices.Add(Index);
