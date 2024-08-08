@@ -384,6 +384,10 @@ namespace glTFRuntimeOBJ
 		TArray<FVector> Normals;
 		TArray<FVector2D> UVs;
 
+		int32 CurrentVertexCounter = 0;
+		int32 CurrentUVCounter = 0;
+		int32 CurrentNormalCounter = 0;
+
 		// step 1, gather vertices, normals and uvs
 		for (int32 LineIndex = 0; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
 		{
@@ -399,6 +403,11 @@ namespace glTFRuntimeOBJ
 
 				FVector Vertex = FVector(FCString::Atod(*(Line[1])), FCString::Atod(*(Line[2])), FCString::Atod(*(Line[3])));
 				Vertices.Add(Asset->GetParser()->TransformPosition(Vertex));
+
+				if (LineIndex < StartingLine)
+				{
+					CurrentVertexCounter++;
+				}
 				continue;
 			}
 
@@ -412,6 +421,11 @@ namespace glTFRuntimeOBJ
 
 				FVector2D UV = FVector2D(FCString::Atod(*(Line[1])), 1 - FCString::Atod(*(Line[2])));
 				UVs.Add(UV);
+
+				if (LineIndex < StartingLine)
+				{
+					CurrentUVCounter++;
+				}
 				continue;
 			}
 
@@ -425,6 +439,11 @@ namespace glTFRuntimeOBJ
 
 				FVector Normal = FVector(FCString::Atod(*(Line[1])), FCString::Atod(*(Line[2])), FCString::Atod(*(Line[3])));
 				Normals.Add(Asset->GetParser()->TransformVector(Normal));
+
+				if (LineIndex < StartingLine)
+				{
+					CurrentNormalCounter++;
+				}
 				continue;
 			}
 		}
@@ -449,12 +468,12 @@ namespace glTFRuntimeOBJ
 				}
 				else if (Value < 0)
 				{
-					if (NumVertices >= Value)
+					if (NumVertices >= FMath::Abs(Value))
 					{
 						return NumVertices + Value;
 					}
 					// probably not a good idea but most obj exporters are very lazy...
-					else if (NumTotalVertices >= Value)
+					else if (NumTotalVertices >= FMath::Abs(Value))
 					{
 						return NumTotalVertices + Value;
 					}
@@ -462,9 +481,7 @@ namespace glTFRuntimeOBJ
 				return 0;
 			};
 
-		int32 CurrentVertexCounter = 0;
-		int32 CurrentUVCounter = 0;
-		int32 CurrentNormalCounter = 0;
+		
 
 		// step 2, build primitives
 		for (int32 LineIndex = StartingLine; LineIndex < RuntimeOBJCacheData->GeometryLines.Num(); LineIndex++)
