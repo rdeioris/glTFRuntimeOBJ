@@ -31,6 +31,10 @@ void AglTFRuntimeOBJAssetActor::BeginPlay()
 		if (UglTFRuntimeOBJFunctionLibrary::LoadOBJAsRuntimeLOD(Asset, ObjectName, LOD, StaticMeshConfig.MaterialsConfig))
 		{
 			UStaticMeshComponent* StaticMeshComponent = NewObject<UStaticMeshComponent>(this, MakeUniqueObjectName(this, UStaticMeshComponent::StaticClass(), *ObjectName));
+			if (StaticMeshConfig.Outer == nullptr)
+			{
+				StaticMeshConfig.Outer = StaticMeshComponent;
+			}
 			StaticMeshComponent->SetupAttachment(GetRootComponent());
 			StaticMeshComponent->RegisterComponent();
 			AddInstanceComponent(StaticMeshComponent);

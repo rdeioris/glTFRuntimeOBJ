@@ -67,6 +67,10 @@ void AglTFRuntimeOBJAssetActorAsync::LoadObjectsAsync(const TArray<FString>& Nam
 	for (const FString& ObjectName : Names)
 	{
 		UStaticMeshComponent* StaticMeshComponent = NewObject<UStaticMeshComponent>(this, MakeUniqueObjectName(this, UStaticMeshComponent::StaticClass(), *ObjectName));
+		if (StaticMeshConfig.Outer == nullptr)
+		{
+			StaticMeshConfig.Outer = StaticMeshComponent;
+		}
 		StaticMeshComponent->SetupAttachment(GetRootComponent());
 		StaticMeshComponent->RegisterComponent();
 		AddInstanceComponent(StaticMeshComponent);
